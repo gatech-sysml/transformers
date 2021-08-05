@@ -529,6 +529,7 @@ class BertEncoder(nn.Module):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.max_encoder_num = None
 
     def forward(
         self,
@@ -547,8 +548,13 @@ class BertEncoder(nn.Module):
         all_self_attentions = () if output_attentions else None
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
 
+        # print("forward in BertEncoder is called")
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
+            # print("on layer ", i)
+            if self.max_encoder_num and i >= self.max_encoder_num:
+                # print("breaking out at layer : ", i)
+                break
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -863,6 +869,14 @@ class BertModel(BertPreTrainedModel):
         self.pooler = BertPooler(config) if add_pooling_layer else None
 
         self.init_weights()
+    
+    def set_max_encoder_num(self, max_encoder_num):
+        assert(self.encoder != None, "the encoder cannot be None")
+        #max encoder number 1 ~ num hidden layers
+        #encoder layers are 0 indexed
+        assert(self.encoder.config.num_hidden_layers >= max_encoder_num, "the max encoder number should not exceed defined hidden layer")
+        print("changing encoder number : " , self.encoder.config.num_hidden_layers, " => ", max_encoder_num)
+        self.encoder.max_encoder_num = max_encoder_num 
 
     def get_input_embeddings(self):
         return self.embeddings.word_embeddings
@@ -1491,7 +1505,6 @@ class BertForSequenceClassification(BertPreTrainedModel):
         )
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-
         self.init_weights()
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
@@ -1501,6 +1514,10 @@ class BertForSequenceClassification(BertPreTrainedModel):
         output_type=SequenceClassifierOutput,
         config_class=_CONFIG_FOR_DOC,
     )
+
+    def set_max_encoder_num(self,max_encoder_num):
+        self.bert.set_max_encoder_num(max_encoder_num)
+
     def forward(
         self,
         input_ids=None,
